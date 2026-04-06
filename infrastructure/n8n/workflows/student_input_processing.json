@@ -1,0 +1,383 @@
+{
+    "name": "New Student Input Processing",
+    "nodes": [
+        {
+            "id": "webhook_trigger",
+            "name": "Student Input Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "position": [
+                100,
+                300
+            ],
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "student-input",
+                "responseMode": "responseNode",
+                "options": {
+                    "rawBody": true
+                }
+            },
+            "typeVersion": 1
+        },
+        {
+            "id": "detect_input_type",
+            "name": "Detect Input Type",
+            "type": "n8n-nodes-base.switch",
+            "position": [
+                300,
+                300
+            ],
+            "parameters": {
+                "dataType": "string",
+                "value1": "={{$json.content_type}}",
+                "rules": {
+                    "rules": [
+                        {
+                            "value2": "text",
+                            "output": 0
+                        },
+                        {
+                            "value2": "image",
+                            "output": 1
+                        },
+                        {
+                            "value2": "video",
+                            "output": 2
+                        },
+                        {
+                            "value2": "document",
+                            "output": 3
+                        }
+                    ]
+                }
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "process_text",
+            "name": "Process Text Input",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                500,
+                100
+            ],
+            "parameters": {
+                "method": "POST",
+                "url": "={{$env.BACKEND_URL}}/api/v1/learn/explain/",
+                "authentication": "predefinedCredentialType",
+                "nodeCredentialType": "httpHeaderAuth",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "Authorization",
+                            "value": "Bearer {{$json.user_token}}"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "concept",
+                            "value": "={{$json.content}}"
+                        },
+                        {
+                            "name": "student_id",
+                            "value": "={{$json.student_id}}"
+                        }
+                    ]
+                }
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "process_image",
+            "name": "Process Image/Diagram",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                500,
+                250
+            ],
+            "parameters": {
+                "method": "POST",
+                "url": "={{$env.BACKEND_URL}}/api/v1/content/process/image/",
+                "authentication": "predefinedCredentialType",
+                "nodeCredentialType": "httpHeaderAuth",
+                "sendBody": true,
+                "contentType": "multipart-form-data",
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "image",
+                            "parameterType": "formBinaryData",
+                            "inputDataFieldName": "data"
+                        },
+                        {
+                            "name": "context",
+                            "value": "={{$json.context}}"
+                        }
+                    ]
+                }
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "process_video",
+            "name": "Process Video",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                500,
+                400
+            ],
+            "parameters": {
+                "method": "POST",
+                "url": "={{$env.BACKEND_URL}}/api/v1/content/process/video/",
+                "authentication": "predefinedCredentialType",
+                "nodeCredentialType": "httpHeaderAuth",
+                "sendBody": true,
+                "contentType": "multipart-form-data",
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "video",
+                            "parameterType": "formBinaryData",
+                            "inputDataFieldName": "data"
+                        }
+                    ]
+                },
+                "options": {
+                    "timeout": 300000
+                }
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "process_document",
+            "name": "Process Document",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                500,
+                550
+            ],
+            "parameters": {
+                "method": "POST",
+                "url": "={{$env.BACKEND_URL}}/api/v1/content/upload/",
+                "authentication": "predefinedCredentialType",
+                "nodeCredentialType": "httpHeaderAuth",
+                "sendBody": true,
+                "contentType": "multipart-form-data",
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "file",
+                            "parameterType": "formBinaryData",
+                            "inputDataFieldName": "data"
+                        }
+                    ]
+                }
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "update_digital_twin",
+            "name": "Update Digital Twin",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                700,
+                300
+            ],
+            "parameters": {
+                "method": "POST",
+                "url": "={{$env.BACKEND_URL}}/api/v1/digital-twin/sync/",
+                "authentication": "predefinedCredentialType",
+                "nodeCredentialType": "httpHeaderAuth",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "Authorization",
+                            "value": "Bearer {{$json.user_token}}"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "event_type",
+                            "value": "learning_event"
+                        },
+                        {
+                            "name": "data",
+                            "value": "={{JSON.stringify($json)}}"
+                        }
+                    ]
+                }
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "format_response",
+            "name": "Format Response",
+            "type": "n8n-nodes-base.set",
+            "position": [
+                900,
+                300
+            ],
+            "parameters": {
+                "values": {
+                    "string": [
+                        {
+                            "name": "status",
+                            "value": "success"
+                        },
+                        {
+                            "name": "explanation",
+                            "value": "={{$json.content}}"
+                        },
+                        {
+                            "name": "next_steps",
+                            "value": "={{$json.next_steps}}"
+                        }
+                    ]
+                }
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "respond_to_webhook",
+            "name": "Respond to Webhook",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "position": [
+                1100,
+                300
+            ],
+            "parameters": {
+                "respondWith": "json",
+                "responseBody": "={{$json}}"
+            },
+            "typeVersion": 1
+        }
+    ],
+    "connections": {
+        "webhook_trigger": {
+            "main": [
+                [
+                    {
+                        "node": "detect_input_type",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "detect_input_type": {
+            "main": [
+                [
+                    {
+                        "node": "process_text",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "process_image",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "process_video",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "process_document",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "process_text": {
+            "main": [
+                [
+                    {
+                        "node": "update_digital_twin",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "process_image": {
+            "main": [
+                [
+                    {
+                        "node": "update_digital_twin",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "process_video": {
+            "main": [
+                [
+                    {
+                        "node": "update_digital_twin",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "process_document": {
+            "main": [
+                [
+                    {
+                        "node": "update_digital_twin",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "update_digital_twin": {
+            "main": [
+                [
+                    {
+                        "node": "format_response",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "format_response": {
+            "main": [
+                [
+                    {
+                        "node": "respond_to_webhook",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "settings": {
+        "executionOrder": "v1"
+    },
+    "staticData": null,
+    "tags": [
+        "ai-tutor",
+        "multi-modal",
+        "student-input"
+    ]
+}

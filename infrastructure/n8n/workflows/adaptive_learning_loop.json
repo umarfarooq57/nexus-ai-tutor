@@ -1,0 +1,523 @@
+{
+    "name": "Adaptive Learning Loop",
+    "nodes": [
+        {
+            "id": "session_complete",
+            "name": "Session Complete Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "position": [
+                100,
+                300
+            ],
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "session-complete",
+                "responseMode": "lastNode"
+            },
+            "typeVersion": 1
+        },
+        {
+            "id": "analyze_session",
+            "name": "Analyze Session Performance",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                300,
+                300
+            ],
+            "parameters": {
+                "method": "POST",
+                "url": "={{$env.BACKEND_URL}}/api/v1/analytics/analyze-session/",
+                "authentication": "predefinedCredentialType",
+                "nodeCredentialType": "httpHeaderAuth",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "session_id",
+                            "value": "={{$json.session_id}}"
+                        },
+                        {
+                            "name": "student_id",
+                            "value": "={{$json.student_id}}"
+                        },
+                        {
+                            "name": "performance_data",
+                            "value": "={{JSON.stringify($json.performance)}}"
+                        }
+                    ]
+                }
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "update_brain_model",
+            "name": "Update Student Brain Model",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                500,
+                300
+            ],
+            "parameters": {
+                "method": "POST",
+                "url": "={{$env.BACKEND_URL}}/api/v1/digital-twin/update/",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "student_id",
+                            "value": "={{$json.student_id}}"
+                        },
+                        {
+                            "name": "mastery_updates",
+                            "value": "={{JSON.stringify($json.mastery_changes)}}"
+                        },
+                        {
+                            "name": "error_patterns",
+                            "value": "={{JSON.stringify($json.errors)}}"
+                        },
+                        {
+                            "name": "time_spent",
+                            "value": "={{$json.time_spent}}"
+                        }
+                    ]
+                }
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "get_rl_recommendation",
+            "name": "Get RL Agent Recommendation",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                700,
+                300
+            ],
+            "parameters": {
+                "method": "POST",
+                "url": "={{$env.ML_SERVICE_URL}}/api/teaching-agent/recommend/",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "student_state",
+                            "value": "={{JSON.stringify($json.brain_model_state)}}"
+                        },
+                        {
+                            "name": "available_content",
+                            "value": "={{JSON.stringify($json.available_content)}}"
+                        }
+                    ]
+                },
+                "options": {
+                    "timeout": 30000
+                }
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "decide_action",
+            "name": "Decide Next Action",
+            "type": "n8n-nodes-base.switch",
+            "position": [
+                900,
+                300
+            ],
+            "parameters": {
+                "dataType": "string",
+                "value1": "={{$json.recommendation.action_type}}",
+                "rules": {
+                    "rules": [
+                        {
+                            "value2": "continue_topic",
+                            "output": 0
+                        },
+                        {
+                            "value2": "review_weakness",
+                            "output": 1
+                        },
+                        {
+                            "value2": "new_topic",
+                            "output": 2
+                        },
+                        {
+                            "value2": "take_break",
+                            "output": 3
+                        },
+                        {
+                            "value2": "quiz",
+                            "output": 4
+                        }
+                    ]
+                }
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "get_next_content",
+            "name": "Get Next Content",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                1100,
+                100
+            ],
+            "parameters": {
+                "method": "GET",
+                "url": "={{$env.BACKEND_URL}}/api/v1/content/next/",
+                "qs": {
+                    "student_id": "={{$json.student_id}}",
+                    "topic_id": "={{$json.recommendation.topic_id}}",
+                    "difficulty": "={{$json.recommendation.difficulty}}"
+                }
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "get_review_content",
+            "name": "Get Review Content",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                1100,
+                225
+            ],
+            "parameters": {
+                "method": "GET",
+                "url": "={{$env.BACKEND_URL}}/api/v1/content/review/",
+                "qs": {
+                    "student_id": "={{$json.student_id}}",
+                    "weak_topics": "={{$json.recommendation.weak_topics.join(',')}}"
+                }
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "get_new_topic",
+            "name": "Get New Topic Content",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                1100,
+                350
+            ],
+            "parameters": {
+                "method": "GET",
+                "url": "={{$env.BACKEND_URL}}/api/v1/content/next-topic/",
+                "qs": {
+                    "student_id": "={{$json.student_id}}",
+                    "learning_path_id": "={{$json.learning_path_id}}"
+                }
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "suggest_break",
+            "name": "Suggest Break",
+            "type": "n8n-nodes-base.set",
+            "position": [
+                1100,
+                475
+            ],
+            "parameters": {
+                "values": {
+                    "string": [
+                        {
+                            "name": "action",
+                            "value": "break"
+                        },
+                        {
+                            "name": "message",
+                            "value": "You've been studying for a while. Take a 10-minute break to recharge!"
+                        },
+                        {
+                            "name": "duration",
+                            "value": "600"
+                        }
+                    ]
+                }
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "generate_practice_quiz",
+            "name": "Generate Practice Quiz",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                1100,
+                600
+            ],
+            "parameters": {
+                "method": "POST",
+                "url": "={{$env.BACKEND_URL}}/api/v1/quiz/generate/",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "student_id",
+                            "value": "={{$json.student_id}}"
+                        },
+                        {
+                            "name": "topic_id",
+                            "value": "={{$json.recommendation.topic_id}}"
+                        },
+                        {
+                            "name": "num_questions",
+                            "value": "5"
+                        },
+                        {
+                            "name": "type",
+                            "value": "practice"
+                        }
+                    ]
+                }
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "format_response",
+            "name": "Format Adaptive Response",
+            "type": "n8n-nodes-base.merge",
+            "position": [
+                1300,
+                300
+            ],
+            "parameters": {
+                "mode": "chooseBranch"
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "send_to_frontend",
+            "name": "Send to Frontend",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                1500,
+                300
+            ],
+            "parameters": {
+                "method": "POST",
+                "url": "={{$env.BACKEND_URL}}/api/v1/realtime/push/",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "student_id",
+                            "value": "={{$json.student_id}}"
+                        },
+                        {
+                            "name": "event",
+                            "value": "next_content"
+                        },
+                        {
+                            "name": "payload",
+                            "value": "={{JSON.stringify($json)}}"
+                        }
+                    ]
+                }
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "log_rl_action",
+            "name": "Log RL Action",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                1700,
+                300
+            ],
+            "parameters": {
+                "method": "POST",
+                "url": "={{$env.BACKEND_URL}}/api/v1/analytics/rl-log/",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "student_id",
+                            "value": "={{$json.student_id}}"
+                        },
+                        {
+                            "name": "action_taken",
+                            "value": "={{$json.action}}"
+                        },
+                        {
+                            "name": "state",
+                            "value": "={{JSON.stringify($json.state)}}"
+                        },
+                        {
+                            "name": "reward",
+                            "value": "={{$json.expected_reward}}"
+                        }
+                    ]
+                }
+            },
+            "typeVersion": 2
+        }
+    ],
+    "connections": {
+        "session_complete": {
+            "main": [
+                [
+                    {
+                        "node": "analyze_session",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "analyze_session": {
+            "main": [
+                [
+                    {
+                        "node": "update_brain_model",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "update_brain_model": {
+            "main": [
+                [
+                    {
+                        "node": "get_rl_recommendation",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "get_rl_recommendation": {
+            "main": [
+                [
+                    {
+                        "node": "decide_action",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "decide_action": {
+            "main": [
+                [
+                    {
+                        "node": "get_next_content",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "get_review_content",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "get_new_topic",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "suggest_break",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "generate_practice_quiz",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "get_next_content": {
+            "main": [
+                [
+                    {
+                        "node": "format_response",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "get_review_content": {
+            "main": [
+                [
+                    {
+                        "node": "format_response",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "get_new_topic": {
+            "main": [
+                [
+                    {
+                        "node": "format_response",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "suggest_break": {
+            "main": [
+                [
+                    {
+                        "node": "format_response",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "generate_practice_quiz": {
+            "main": [
+                [
+                    {
+                        "node": "format_response",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "format_response": {
+            "main": [
+                [
+                    {
+                        "node": "send_to_frontend",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "send_to_frontend": {
+            "main": [
+                [
+                    {
+                        "node": "log_rl_action",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "settings": {
+        "executionOrder": "v1"
+    },
+    "tags": [
+        "ai-tutor",
+        "adaptive-learning",
+        "reinforcement-learning"
+    ]
+}

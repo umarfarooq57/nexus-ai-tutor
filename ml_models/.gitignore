@@ -1,0 +1,8 @@
+# Ignore everything
+*
+
+# Except these directories
+!.gitignore
+
+# This folder will store trained ML models
+# Add your trained models here

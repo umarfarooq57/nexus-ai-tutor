@@ -1,0 +1,307 @@
+{
+    "name": "Quiz Generation & Grading",
+    "nodes": [
+        {
+            "id": "schedule_trigger",
+            "name": "Daily Quiz Trigger",
+            "type": "n8n-nodes-base.scheduleTrigger",
+            "position": [
+                100,
+                200
+            ],
+            "parameters": {
+                "rule": {
+                    "interval": [
+                        {
+                            "field": "cronExpression",
+                            "expression": "0 9 * * *"
+                        }
+                    ]
+                }
+            },
+            "typeVersion": 1
+        },
+        {
+            "id": "manual_trigger",
+            "name": "Manual Trigger",
+            "type": "n8n-nodes-base.webhook",
+            "position": [
+                100,
+                350
+            ],
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "generate-quiz",
+                "responseMode": "responseNode"
+            },
+            "typeVersion": 1
+        },
+        {
+            "id": "get_students",
+            "name": "Get Active Students",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                300,
+                275
+            ],
+            "parameters": {
+                "method": "GET",
+                "url": "={{$env.BACKEND_URL}}/api/v1/students/active/",
+                "authentication": "predefinedCredentialType",
+                "nodeCredentialType": "httpHeaderAuth"
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "split_students",
+            "name": "Split Students",
+            "type": "n8n-nodes-base.splitInBatches",
+            "position": [
+                500,
+                275
+            ],
+            "parameters": {
+                "batchSize": 1
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "get_weak_topics",
+            "name": "Get Weak Topics",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                700,
+                275
+            ],
+            "parameters": {
+                "method": "GET",
+                "url": "={{$env.BACKEND_URL}}/api/v1/students/{{$json.student_id}}/weaknesses/",
+                "authentication": "predefinedCredentialType",
+                "nodeCredentialType": "httpHeaderAuth"
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "generate_quiz",
+            "name": "Generate Personalized Quiz",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                900,
+                275
+            ],
+            "parameters": {
+                "method": "POST",
+                "url": "={{$env.BACKEND_URL}}/api/v1/quiz/generate/",
+                "authentication": "predefinedCredentialType",
+                "nodeCredentialType": "httpHeaderAuth",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "student_id",
+                            "value": "={{$json.student_id}}"
+                        },
+                        {
+                            "name": "topic_id",
+                            "value": "={{$json.weak_topics[0].topic_id}}"
+                        },
+                        {
+                            "name": "num_questions",
+                            "value": "10"
+                        },
+                        {
+                            "name": "type",
+                            "value": "adaptive"
+                        }
+                    ]
+                }
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "send_notification",
+            "name": "Send Quiz Notification",
+            "type": "n8n-nodes-base.emailSend",
+            "position": [
+                1100,
+                200
+            ],
+            "parameters": {
+                "fromEmail": "tutor@nexus-ai.com",
+                "toEmail": "={{$json.student_email}}",
+                "subject": "Your Daily Personalized Quiz is Ready! 🎯",
+                "text": "Hi {{$json.student_name}},\n\nYour personalized quiz on {{$json.topic_name}} is ready!\n\nBased on your learning progress, we've prepared 10 questions to help strengthen your understanding.\n\nClick here to start: {{$env.FRONTEND_URL}}/quiz/{{$json.quiz_id}}\n\nGood luck! 🚀\n\nYour AI Tutor"
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "send_push",
+            "name": "Send Push Notification",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                1100,
+                350
+            ],
+            "parameters": {
+                "method": "POST",
+                "url": "={{$env.PUSH_SERVICE_URL}}/send",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "user_id",
+                            "value": "={{$json.student_id}}"
+                        },
+                        {
+                            "name": "title",
+                            "value": "Quiz Ready!"
+                        },
+                        {
+                            "name": "body",
+                            "value": "Your personalized quiz on {{$json.topic_name}} is waiting"
+                        },
+                        {
+                            "name": "action_url",
+                            "value": "/quiz/{{$json.quiz_id}}"
+                        }
+                    ]
+                }
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "log_status",
+            "name": "Log Quiz Generation",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                1300,
+                275
+            ],
+            "parameters": {
+                "method": "POST",
+                "url": "={{$env.BACKEND_URL}}/api/v1/analytics/log/",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "event",
+                            "value": "quiz_generated"
+                        },
+                        {
+                            "name": "student_id",
+                            "value": "={{$json.student_id}}"
+                        },
+                        {
+                            "name": "quiz_id",
+                            "value": "={{$json.quiz_id}}"
+                        }
+                    ]
+                }
+            },
+            "typeVersion": 2
+        }
+    ],
+    "connections": {
+        "schedule_trigger": {
+            "main": [
+                [
+                    {
+                        "node": "get_students",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "manual_trigger": {
+            "main": [
+                [
+                    {
+                        "node": "get_students",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "get_students": {
+            "main": [
+                [
+                    {
+                        "node": "split_students",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "split_students": {
+            "main": [
+                [
+                    {
+                        "node": "get_weak_topics",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "get_weak_topics": {
+            "main": [
+                [
+                    {
+                        "node": "generate_quiz",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "generate_quiz": {
+            "main": [
+                [
+                    {
+                        "node": "send_notification",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "send_push",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "send_notification": {
+            "main": [
+                [
+                    {
+                        "node": "log_status",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "send_push": {
+            "main": [
+                [
+                    {
+                        "node": "log_status",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "settings": {
+        "executionOrder": "v1"
+    },
+    "tags": [
+        "ai-tutor",
+        "quiz",
+        "automation"
+    ]
+}

@@ -1,0 +1,310 @@
+{
+    "name": "Report Generation & Delivery",
+    "nodes": [
+        {
+            "id": "webhook_trigger",
+            "name": "Report Request",
+            "type": "n8n-nodes-base.webhook",
+            "position": [
+                100,
+                300
+            ],
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "generate-report",
+                "responseMode": "responseNode"
+            },
+            "typeVersion": 1
+        },
+        {
+            "id": "weekly_trigger",
+            "name": "Weekly Report Trigger",
+            "type": "n8n-nodes-base.scheduleTrigger",
+            "position": [
+                100,
+                150
+            ],
+            "parameters": {
+                "rule": {
+                    "interval": [
+                        {
+                            "field": "cronExpression",
+                            "expression": "0 8 * * 1"
+                        }
+                    ]
+                }
+            },
+            "typeVersion": 1
+        },
+        {
+            "id": "get_student_data",
+            "name": "Get Student Analytics",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                350,
+                300
+            ],
+            "parameters": {
+                "method": "GET",
+                "url": "={{$env.BACKEND_URL}}/api/v1/students/{{$json.student_id}}/analytics/",
+                "authentication": "predefinedCredentialType",
+                "nodeCredentialType": "httpHeaderAuth"
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "generate_charts",
+            "name": "Generate Charts",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                550,
+                300
+            ],
+            "parameters": {
+                "method": "POST",
+                "url": "={{$env.BACKEND_URL}}/api/v1/analytics/charts/",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "student_id",
+                            "value": "={{$json.student_id}}"
+                        },
+                        {
+                            "name": "chart_types",
+                            "value": "[\"progress_line\", \"skill_radar\", \"time_bar\"]"
+                        }
+                    ]
+                }
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "generate_report",
+            "name": "Generate PDF Report",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                750,
+                300
+            ],
+            "parameters": {
+                "method": "POST",
+                "url": "={{$env.BACKEND_URL}}/api/v1/reports/generate/",
+                "authentication": "predefinedCredentialType",
+                "nodeCredentialType": "httpHeaderAuth",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "type",
+                            "value": "progress_report"
+                        },
+                        {
+                            "name": "student_id",
+                            "value": "={{$json.student_id}}"
+                        },
+                        {
+                            "name": "format",
+                            "value": "{{$json.format || 'pdf'}}"
+                        },
+                        {
+                            "name": "data",
+                            "value": "={{JSON.stringify($json.analytics)}}"
+                        }
+                    ]
+                },
+                "options": {
+                    "response": {
+                        "response": {
+                            "fullResponse": true,
+                            "responseFormat": "file"
+                        }
+                    }
+                }
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "upload_to_storage",
+            "name": "Upload to S3",
+            "type": "n8n-nodes-base.awsS3",
+            "position": [
+                950,
+                200
+            ],
+            "parameters": {
+                "operation": "upload",
+                "bucketName": "nexus-ai-reports",
+                "fileName": "={{$json.student_id}}/reports/{{$now.format('YYYY-MM-DD')}}_progress.pdf",
+                "binaryData": true,
+                "binaryPropertyName": "data"
+            },
+            "typeVersion": 1
+        },
+        {
+            "id": "send_email",
+            "name": "Send Report Email",
+            "type": "n8n-nodes-base.emailSend",
+            "position": [
+                950,
+                400
+            ],
+            "parameters": {
+                "fromEmail": "reports@nexus-ai.com",
+                "toEmail": "={{$json.student_email}}",
+                "subject": "Your Weekly Learning Progress Report 📊",
+                "text": "Hi {{$json.student_name}},\n\nAttached is your weekly learning progress report.\n\nHighlights:\n- Overall Progress: {{$json.analytics.overall_progress}}%\n- Topics Completed: {{$json.analytics.topics_completed}}\n- Study Time: {{$json.analytics.total_hours}} hours\n\nKeep up the great work!\n\nYour AI Tutor",
+                "attachments": "data"
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "save_report_record",
+            "name": "Save Report Record",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                1150,
+                300
+            ],
+            "parameters": {
+                "method": "POST",
+                "url": "={{$env.BACKEND_URL}}/api/v1/reports/",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "student_id",
+                            "value": "={{$json.student_id}}"
+                        },
+                        {
+                            "name": "report_type",
+                            "value": "progress_report"
+                        },
+                        {
+                            "name": "s3_url",
+                            "value": "={{$json.s3_url}}"
+                        }
+                    ]
+                }
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "respond",
+            "name": "Respond Success",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "position": [
+                1350,
+                300
+            ],
+            "parameters": {
+                "respondWith": "json",
+                "responseBody": "={{ {\"status\": \"success\", \"report_url\": $json.s3_url, \"message\": \"Report generated and sent\"} }}"
+            },
+            "typeVersion": 1
+        }
+    ],
+    "connections": {
+        "webhook_trigger": {
+            "main": [
+                [
+                    {
+                        "node": "get_student_data",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "weekly_trigger": {
+            "main": [
+                [
+                    {
+                        "node": "get_student_data",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "get_student_data": {
+            "main": [
+                [
+                    {
+                        "node": "generate_charts",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "generate_charts": {
+            "main": [
+                [
+                    {
+                        "node": "generate_report",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "generate_report": {
+            "main": [
+                [
+                    {
+                        "node": "upload_to_storage",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "send_email",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "upload_to_storage": {
+            "main": [
+                [
+                    {
+                        "node": "save_report_record",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "send_email": {
+            "main": [
+                [
+                    {
+                        "node": "save_report_record",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "save_report_record": {
+            "main": [
+                [
+                    {
+                        "node": "respond",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "settings": {
+        "executionOrder": "v1"
+    },
+    "tags": [
+        "ai-tutor",
+        "reports",
+        "automation"
+    ]
+}

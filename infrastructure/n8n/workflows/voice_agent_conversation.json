@@ -1,0 +1,270 @@
+{
+    "name": "Voice Agent Conversation",
+    "nodes": [
+        {
+            "id": "voice_webhook",
+            "name": "Voice Input Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "position": [
+                100,
+                300
+            ],
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "voice-agent",
+                "responseMode": "responseNode"
+            },
+            "typeVersion": 1
+        },
+        {
+            "id": "transcribe_audio",
+            "name": "Transcribe Audio",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                300,
+                300
+            ],
+            "parameters": {
+                "method": "POST",
+                "url": "={{$env.BACKEND_URL}}/api/v1/voice/transcribe/",
+                "authentication": "predefinedCredentialType",
+                "nodeCredentialType": "httpHeaderAuth",
+                "sendBody": true,
+                "contentType": "multipart-form-data",
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "audio",
+                            "parameterType": "formBinaryData",
+                            "inputDataFieldName": "data"
+                        },
+                        {
+                            "name": "language",
+                            "value": "={{$json.language || 'en'}}"
+                        }
+                    ]
+                }
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "select_agent",
+            "name": "Select Teaching Agent",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                500,
+                300
+            ],
+            "parameters": {
+                "method": "POST",
+                "url": "={{$env.BACKEND_URL}}/api/v1/agent/chat/",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "message",
+                            "value": "={{$json.text}}"
+                        },
+                        {
+                            "name": "subject",
+                            "value": "={{$json.subject || 'general'}}"
+                        },
+                        {
+                            "name": "context",
+                            "value": "={{JSON.stringify({student_id: $json.student_id, session_id: $json.session_id})}}"
+                        }
+                    ]
+                }
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "generate_speech",
+            "name": "Generate Speech Response",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                700,
+                300
+            ],
+            "parameters": {
+                "method": "POST",
+                "url": "={{$env.BACKEND_URL}}/api/v1/voice/speak/",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "text",
+                            "value": "={{$json.response.substring(0, 500)}}"
+                        },
+                        {
+                            "name": "voice",
+                            "value": "professor"
+                        }
+                    ]
+                }
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "log_conversation",
+            "name": "Log Conversation",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                900,
+                200
+            ],
+            "parameters": {
+                "method": "POST",
+                "url": "={{$env.BACKEND_URL}}/api/v1/analytics/log/",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "event",
+                            "value": "voice_conversation"
+                        },
+                        {
+                            "name": "student_id",
+                            "value": "={{$json.student_id}}"
+                        },
+                        {
+                            "name": "agent_id",
+                            "value": "={{$json.agent_id}}"
+                        },
+                        {
+                            "name": "user_text",
+                            "value": "={{$json.user_text}}"
+                        }
+                    ]
+                }
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "update_twin",
+            "name": "Update Digital Twin",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                900,
+                400
+            ],
+            "parameters": {
+                "method": "POST",
+                "url": "={{$env.BACKEND_URL}}/api/v1/digital-twin/update/",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "student_id",
+                            "value": "={{$json.student_id}}"
+                        },
+                        {
+                            "name": "event_type",
+                            "value": "voice_interaction"
+                        },
+                        {
+                            "name": "topic",
+                            "value": "={{$json.subject}}"
+                        }
+                    ]
+                }
+            },
+            "typeVersion": 2
+        },
+        {
+            "id": "respond",
+            "name": "Return Response",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "position": [
+                1100,
+                300
+            ],
+            "parameters": {
+                "respondWith": "json",
+                "responseBody": "={{ {\"success\": true, \"user_text\": $json.user_text, \"response\": $json.response, \"audio\": $json.audio, \"agent\": $json.agent_name} }}"
+            },
+            "typeVersion": 1
+        }
+    ],
+    "connections": {
+        "voice_webhook": {
+            "main": [
+                [
+                    {
+                        "node": "transcribe_audio",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "transcribe_audio": {
+            "main": [
+                [
+                    {
+                        "node": "select_agent",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "select_agent": {
+            "main": [
+                [
+                    {
+                        "node": "generate_speech",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "generate_speech": {
+            "main": [
+                [
+                    {
+                        "node": "log_conversation",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "update_twin",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "log_conversation": {
+            "main": [
+                [
+                    {
+                        "node": "respond",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "update_twin": {
+            "main": [
+                [
+                    {
+                        "node": "respond",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "settings": {
+        "executionOrder": "v1"
+    },
+    "tags": [
+        "ai-tutor",
+        "voice",
+        "agentic-ai"
+    ]
+}
